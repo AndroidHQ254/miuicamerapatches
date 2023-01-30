@@ -1,0 +1,50 @@
+From ba7bdf8ee51c675886ed61d9cad8263abf8c4d3a Mon Sep 17 00:00:00 2001
+From: AndroidHQ254 <d.murimi14@gmail.com>
+Date: Sun, 29 Jan 2023 19:59:23 +0000
+Subject: [PATCH 1/5] Revert "Camera: Ignore torch status update for aux or
+ composite camera"
+
+This reverts commit ecdd9b76dc22381e79d48ac83940b68e1b4fc824.
+---
+ .../hardware/camera2/CameraManager.java        | 18 ------------------
+ 1 file changed, 18 deletions(-)
+
+diff --git a/core/java/android/hardware/camera2/CameraManager.java b/core/java/android/hardware/camera2/CameraManager.java
+index 9458960d13de..de3a2647cc4a 100644
+--- a/core/java/android/hardware/camera2/CameraManager.java
++++ b/core/java/android/hardware/camera2/CameraManager.java
+@@ -1954,14 +1954,6 @@ public final class CameraManager {
+                     throw new IllegalArgumentException("cameraId was null");
+                 }
+ 
+-                /* Force to expose only two cameras
+-                 * if the package name does not falls in this bucket
+-                 */
+-                boolean exposeAuxCamera = Camera.shouldExposeAuxCamera();
+-                if (exposeAuxCamera == false && (Integer.parseInt(cameraId) >= 2)) {
+-                    throw new IllegalArgumentException("invalid cameraId");
+-                }
+-
+                 ICameraService cameraService = getCameraService();
+                 if (cameraService == null) {
+                     throw new CameraAccessException(CameraAccessException.CAMERA_DISCONNECTED,
+@@ -2365,16 +2357,6 @@ public final class CameraManager {
+                         String.format("Camera id %s has torch status changed to 0x%x", id, status));
+             }
+ 
+-            /* Force to ignore the aux or composite camera torch status update
+-             * if the package name does not falls in this bucket
+-             */
+-            boolean exposeAuxCamera = Camera.shouldExposeAuxCamera();
+-            if (exposeAuxCamera == false && Integer.parseInt(id) >= 2) {
+-                Log.w(TAG, "ignore the torch status update of camera: " + id);
+-                return;
+-            }
+-
+-
+             if (!validTorchStatus(status)) {
+                 Log.e(TAG, String.format("Ignoring invalid device %s torch status 0x%x", id,
+                                 status));
+-- 
+2.34.1
+

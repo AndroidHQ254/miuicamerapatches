@@ -1,0 +1,294 @@
+From fa7296a8095b67741a9c8817224be41d4f0cc851 Mon Sep 17 00:00:00 2001
+From: Arian <arian.kulmer@web.de>
+Date: Tue, 11 Oct 2022 22:18:21 +0200
+Subject: [PATCH 1/2] Camera: Skip stream size check for whitelisted apps
+
+This is a squash of the following CLO commits:
+
+commit 84b2ea267f2b5a5b8925758ab8f9e9f0db4f6d53
+Author: Pavan Kumar Mc <quic_pmc@quicinc.com>
+Date:   Fri Nov 12 21:21:46 2021 +0530
+
+    Camera: Avoid roundBufferDimensionsNearest for AIDE2 YUV streams
+
+    - AIDE2 is vendor enhanced feature which needs special resolutions
+      for full and downscaled YUV streams.Those resolutions are not
+      populated in static capabilities. So avoid roundBufferDimensionsNearest
+      for YUV streams in privileged client case.
+
+    CRs-Fixed: 3012886
+
+    Change-Id: Ia1d134edd1fac2ffd454137aa2a4aa5b9d40c7a7
+
+commit 35df5effc321d630e711161fba02614f0c61abdd
+Author: Pavan Kumar Mc <pmc@codeaurora.org>
+Date:   Tue Aug 17 10:28:21 2021 +0530
+
+    Camera: Support raw stream creation for priviledged APPs
+
+    - Raw stream creation failing as priviledged APP check set to FALSE
+      for new set of call flow to roundBufferDimensionNearest. Setting
+      the condition to TRUE.
+
+    CRs-Fixed: 3011444
+
+    Change-Id: Ia3d5e4744a78b06c00e99fb5be856b24acbff599
+
+commit 573cb73a1c6c4a8bf13791b98c5d539ebffa2d0f
+Author: Pavan Kumar Mc <pmc@codeaurora.org>
+Date:   Thu Jun 24 11:19:35 2021 +0530
+
+    Camera: Master callback mode support for MCX raw
+
+    - Raw stream creation failing for size greater than logical
+      camera resolution as size cannot exceed max raw stream size
+      in available stream configuration.
+
+    - Allow creating raw streams of greater size for logical camera
+
+    CRs-Fixed: 2968932
+
+    Change-Id: Ibacc3c72e34b2f137546288f67bcdb4e0a38aa23
+
+commit 15de50a2fe471e7d3cc498286f0de31282303fb0
+Author: Pavan Kumar Mc <pmc@codeaurora.org>
+Date:   Wed Apr 21 17:59:46 2021 +0530
+
+    Camera: Master callback mode support for MCX raw
+
+    - Raw stream creation failing for size greater than logical
+      camera resolution as size cannot exceed max raw stream size
+      in available stream configuration.
+
+    - Allow creating raw streams of greater size for logical camera
+
+    CRs-Fixed: 2860300
+
+    Change-Id: Ic0f99e55b1519596e49ff2af14895cea1a19c752
+
+commit cee145eaaf32faf0b99f46f957a9fb6ad66abccf
+Author: Gaoxiang Chen <gaochen@codeaurora.org>
+Date:   Wed Jun 21 12:57:08 2017 +0530
+
+    Camera: Skip stream size check for whitelisted apps.
+
+    Issue:
+    For quadracfa capture, Blob/YUV output streams need to be
+    configured with custom dimensions which will not be available
+    in advertised stream configurations map.
+
+    Fix:
+    Skip the stream size check for whitelisted apps to allow
+    configuration of streams with custom dimensions.
+
+    Setprop to be used:
+    adb shell setprop persist.vendor.camera.privapp.list <pack1,pack2>
+
+    Change-Id: Id94b40c94f42bf4579dc6d8bb6273003312ea669
+
+Change-Id: If12f9696fbc78edbd5fb4345a48818fa5d74752f
+---
+ .../api2/CameraDeviceClient.cpp               | 14 +++++--
+ .../api2/CameraDeviceClient.h                 |  1 +
+ .../device3/Camera3Device.cpp                 |  5 ---
+ .../utils/SessionConfigurationUtils.cpp       | 41 ++++++++++++++++---
+ .../utils/SessionConfigurationUtils.h         |  6 +--
+ 5 files changed, 51 insertions(+), 16 deletions(-)
+
+diff --git a/services/camera/libcameraservice/api2/CameraDeviceClient.cpp b/services/camera/libcameraservice/api2/CameraDeviceClient.cpp
+index 15df981c7a..ac2f650d01 100644
+--- a/services/camera/libcameraservice/api2/CameraDeviceClient.cpp
++++ b/services/camera/libcameraservice/api2/CameraDeviceClient.cpp
+@@ -103,8 +103,16 @@ CameraDeviceClient::CameraDeviceClient(const sp<CameraService>& cameraService,
+     mInputStream(),
+     mStreamingRequestId(REQUEST_ID_NONE),
+     mRequestIdCounter(0),
++    mPrivilegedClient(false),
+     mOverrideForPerfClass(overrideForPerfClass) {
+ 
++    char value[PROPERTY_VALUE_MAX];
++    property_get("persist.vendor.camera.privapp.list", value, "");
++    String16 packagelist(value);
++    if (packagelist.contains(clientPackageName.string())) {
++        mPrivilegedClient = true;
++    }
++
+     ATRACE_CALL();
+     ALOGI("CameraDeviceClient %s: Opened", cameraId.string());
+ }
+@@ -923,7 +931,7 @@ binder::Status CameraDeviceClient::createStream(
+         res = SessionConfigurationUtils::createSurfaceFromGbp(streamInfo,
+                 isStreamInfoValid, surface, bufferProducer, mCameraIdStr,
+                 mDevice->infoPhysical(physicalCameraId), sensorPixelModesUsed, dynamicRangeProfile,
+-                streamUseCase, timestampBase, mirrorMode);
++                streamUseCase, timestampBase, mirrorMode, mPrivilegedClient);
+ 
+         if (!res.isOk())
+             return res;
+@@ -1283,7 +1291,7 @@ binder::Status CameraDeviceClient::updateOutputConfiguration(int streamId,
+         res = SessionConfigurationUtils::createSurfaceFromGbp(outInfo,
+                 /*isStreamInfoValid*/ false, surface, newOutputsMap.valueAt(i), mCameraIdStr,
+                 mDevice->infoPhysical(physicalCameraId), sensorPixelModesUsed, dynamicRangeProfile,
+-                streamUseCase, timestampBase, mirrorMode);
++                streamUseCase, timestampBase, mirrorMode, mPrivilegedClient);
+         if (!res.isOk())
+             return res;
+ 
+@@ -1657,7 +1665,7 @@ binder::Status CameraDeviceClient::finalizeOutputConfigurations(int32_t streamId
+         res = SessionConfigurationUtils::createSurfaceFromGbp(mStreamInfoMap[streamId],
+                 true /*isStreamInfoValid*/, surface, bufferProducer, mCameraIdStr,
+                 mDevice->infoPhysical(physicalId), sensorPixelModesUsed, dynamicRangeProfile,
+-                streamUseCase, timestampBase, mirrorMode);
++                streamUseCase, timestampBase, mirrorMode, mPrivilegedClient);
+ 
+         if (!res.isOk())
+             return res;
+diff --git a/services/camera/libcameraservice/api2/CameraDeviceClient.h b/services/camera/libcameraservice/api2/CameraDeviceClient.h
+index 45915ba963..b626973a27 100644
+--- a/services/camera/libcameraservice/api2/CameraDeviceClient.h
++++ b/services/camera/libcameraservice/api2/CameraDeviceClient.h
+@@ -326,6 +326,7 @@ private:
+     static const int32_t REQUEST_ID_NONE = -1;
+ 
+     int32_t mRequestIdCounter;
++    bool mPrivilegedClient;
+ 
+     std::vector<std::string> mPhysicalCameraIds;
+ 
+diff --git a/services/camera/libcameraservice/device3/Camera3Device.cpp b/services/camera/libcameraservice/device3/Camera3Device.cpp
+index ca70b88c15..06bade772c 100644
+--- a/services/camera/libcameraservice/device3/Camera3Device.cpp
++++ b/services/camera/libcameraservice/device3/Camera3Device.cpp
+@@ -436,11 +436,6 @@ ssize_t Camera3Device::getJpegBufferSize(const CameraMetadata &info, uint32_t wi
+             (chosenMaxJpegResolution.width * chosenMaxJpegResolution.height);
+     ssize_t jpegBufferSize = scaleFactor * (maxJpegBufferSize - kMinJpegBufferSize) +
+             kMinJpegBufferSize;
+-    if (jpegBufferSize > maxJpegBufferSize) {
+-        ALOGI("%s: jpeg buffer size calculated is > maxJpeg bufferSize(%zd), clamping",
+-                  __FUNCTION__, maxJpegBufferSize);
+-        jpegBufferSize = maxJpegBufferSize;
+-    }
+     return jpegBufferSize;
+ }
+ 
+diff --git a/services/camera/libcameraservice/utils/SessionConfigurationUtils.cpp b/services/camera/libcameraservice/utils/SessionConfigurationUtils.cpp
+index 7dde268f07..b49f86c0e7 100644
+--- a/services/camera/libcameraservice/utils/SessionConfigurationUtils.cpp
++++ b/services/camera/libcameraservice/utils/SessionConfigurationUtils.cpp
+@@ -150,7 +150,7 @@ int64_t euclidDistSquare(int32_t x0, int32_t y0, int32_t x1, int32_t y1) {
+ bool roundBufferDimensionNearest(int32_t width, int32_t height,
+         int32_t format, android_dataspace dataSpace,
+         const CameraMetadata& info, bool maxResolution, /*out*/int32_t* outWidth,
+-        /*out*/int32_t* outHeight) {
++        /*out*/int32_t* outHeight, bool isPriviledgedClient) {
+     const int32_t depthSizesTag =
+             getAppropriateModeTag(ANDROID_DEPTH_AVAILABLE_DEPTH_STREAM_CONFIGURATIONS,
+                     maxResolution);
+@@ -191,6 +191,37 @@ bool roundBufferDimensionNearest(int32_t width, int32_t height,
+         }
+     }
+ 
++    if (isPriviledgedClient == true && bestWidth == -1 &&
++        (format == HAL_PIXEL_FORMAT_RAW10 || format == HAL_PIXEL_FORMAT_RAW12 ||
++         format == HAL_PIXEL_FORMAT_RAW16 || format == HAL_PIXEL_FORMAT_RAW_OPAQUE)) {
++        bool isLogicalCamera = false;
++        auto entry = info.find(ANDROID_REQUEST_AVAILABLE_CAPABILITIES);
++        for (size_t i = 0; i < entry.count; ++i) {
++            uint8_t capability = entry.data.u8[i];
++            if (capability == ANDROID_REQUEST_AVAILABLE_CAPABILITIES_LOGICAL_MULTI_CAMERA) {
++                isLogicalCamera = true;
++                break;
++            }
++        }
++
++        if (isLogicalCamera == true) {
++            bestWidth = width;
++            bestHeight = height;
++        }
++    }
++
++    // Avoid roundBufferDimensionsNearest for privileged client YUV streams to meet the AIDE2
++    // requirement. AIDE2 is vendor enhanced feature which requires special resolutions and
++    // those are not populated in static capabilities.
++    if (isPriviledgedClient == true && format == HAL_PIXEL_FORMAT_YCbCr_420_888) {
++        ALOGI("Bypass roundBufferDimensionNearest for privilegedClient YUV streams "
++              "width %d height %d",
++              width, height);
++
++        bestWidth  = width;
++        bestHeight = height;
++    }
++
+     if (bestWidth == -1) {
+         // Return false if no configurations for this format were listed
+         return false;
+@@ -336,7 +367,7 @@ binder::Status createSurfaceFromGbp(
+         sp<Surface>& surface, const sp<IGraphicBufferProducer>& gbp,
+         const String8 &logicalCameraId, const CameraMetadata &physicalCameraMetadata,
+         const std::vector<int32_t> &sensorPixelModesUsed, int64_t dynamicRangeProfile,
+-        int64_t streamUseCase, int timestampBase, int mirrorMode) {
++        int64_t streamUseCase, int timestampBase, int mirrorMode, bool isPriviledgedClient) {
+     // bufferProducer must be non-null
+     if (gbp == nullptr) {
+         String8 msg = String8::format("Camera %s: Surface is NULL", logicalCameraId.string());
+@@ -427,7 +458,7 @@ binder::Status createSurfaceFromGbp(
+     if (flexibleConsumer && isPublicFormat(format) &&
+             !SessionConfigurationUtils::roundBufferDimensionNearest(width, height,
+             format, dataSpace, physicalCameraMetadata, foundInMaxRes, /*out*/&width,
+-            /*out*/&height)) {
++            /*out*/&height, isPriviledgedClient)) {
+         String8 msg = String8::format("Camera %s: No supported stream configurations with "
+                 "format %#x defined, failed to create output stream",
+                 logicalCameraId.string(), format);
+@@ -564,7 +595,7 @@ convertToHALStreamCombination(
+         const String8 &logicalCameraId, const CameraMetadata &deviceInfo,
+         metadataGetter getMetadata, const std::vector<std::string> &physicalCameraIds,
+         aidl::android::hardware::camera::device::StreamConfiguration &streamConfiguration,
+-        bool overrideForPerfClass, bool *earlyExit) {
++        bool overrideForPerfClass, bool *earlyExit, bool isPriviledgedClient) {
+     using SensorPixelMode = aidl::android::hardware::camera::metadata::SensorPixelMode;
+     auto operatingMode = sessionConfiguration.getOperatingMode();
+     binder::Status res = checkOperatingMode(operatingMode, deviceInfo, logicalCameraId);
+@@ -693,7 +724,7 @@ convertToHALStreamCombination(
+             sp<Surface> surface;
+             res = createSurfaceFromGbp(streamInfo, isStreamInfoValid, surface, bufferProducer,
+                     logicalCameraId, metadataChosen, sensorPixelModesUsed, dynamicRangeProfile,
+-                    streamUseCase, timestampBase, mirrorMode);
++                    streamUseCase, timestampBase, mirrorMode, isPriviledgedClient);
+ 
+             if (!res.isOk())
+                 return res;
+diff --git a/services/camera/libcameraservice/utils/SessionConfigurationUtils.h b/services/camera/libcameraservice/utils/SessionConfigurationUtils.h
+index a127c7bdcb..2bc55a88bb 100644
+--- a/services/camera/libcameraservice/utils/SessionConfigurationUtils.h
++++ b/services/camera/libcameraservice/utils/SessionConfigurationUtils.h
+@@ -86,7 +86,7 @@ int64_t euclidDistSquare(int32_t x0, int32_t y0, int32_t x1, int32_t y1);
+ // a width <= ROUNDING_WIDTH_CAP
+ bool roundBufferDimensionNearest(int32_t width, int32_t height, int32_t format,
+         android_dataspace dataSpace, const CameraMetadata& info, bool maxResolution,
+-        /*out*/int32_t* outWidth, /*out*/int32_t* outHeight);
++        /*out*/int32_t* outWidth, /*out*/int32_t* outHeight, bool isPriviledgedClient);
+ 
+ // check if format is not custom format
+ bool isPublicFormat(int32_t format);
+@@ -98,7 +98,7 @@ binder::Status createSurfaceFromGbp(
+         sp<Surface>& surface, const sp<IGraphicBufferProducer>& gbp,
+         const String8 &logicalCameraId, const CameraMetadata &physicalCameraMetadata,
+         const std::vector<int32_t> &sensorPixelModesUsed,  int64_t dynamicRangeProfile,
+-        int64_t streamUseCase, int timestampBase, int mirrorMode);
++        int64_t streamUseCase, int timestampBase, int mirrorMode, bool isPriviledgedClient=false);
+ 
+ //check if format is 10-bit output compatible
+ bool is10bitCompatibleFormat(int32_t format);
+@@ -133,7 +133,7 @@ convertToHALStreamCombination(
+     const String8 &logicalCameraId, const CameraMetadata &deviceInfo,
+     metadataGetter getMetadata, const std::vector<std::string> &physicalCameraIds,
+     aidl::android::hardware::camera::device::StreamConfiguration &streamConfiguration,
+-    bool overrideForPerfClass, bool *earlyExit);
++    bool overrideForPerfClass, bool *earlyExit, bool isPriviledgedClient = false);
+ 
+ StreamConfigurationPair getStreamConfigurationPair(const CameraMetadata &metadata);
+ 
+-- 
+2.34.1
+

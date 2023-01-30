@@ -1,0 +1,27 @@
+From 05cacb23d6c912ce1e3e7e038083d9896706d87a Mon Sep 17 00:00:00 2001
+From: AndroidHQ254 <d.murimi14@gmail.com>
+Date: Sun, 29 Jan 2023 20:02:33 +0000
+Subject: [PATCH 3/5] Revert "Camera: Replace packageblacklist with
+ packageexcludelist"
+
+This reverts commit c54cdccfeb5a3d1c4acfaa7183069ef0f7cd2066.
+---
+ core/java/android/hardware/Camera.java | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/core/java/android/hardware/Camera.java b/core/java/android/hardware/Camera.java
+index ad8cb99405a4..a406214d1519 100644
+--- a/core/java/android/hardware/Camera.java
++++ b/core/java/android/hardware/Camera.java
+@@ -278,7 +278,7 @@ public class Camera {
+         List<String> packageList = Arrays.asList(
+                 SystemProperties.get("vendor.camera.aux.packagelist", packageName).split(","));
+         List<String> packageBlacklist = Arrays.asList(
+-                SystemProperties.get("vendor.camera.aux.packageexcludelist", "").split(","));
++                SystemProperties.get("vendor.camera.aux.packageblacklist", "").split(","));
+ 
+         return packageList.contains(packageName) && !packageBlacklist.contains(packageName);
+     }
+-- 
+2.34.1
+
