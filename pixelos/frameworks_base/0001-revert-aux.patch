@@ -1,0 +1,86 @@
+From 390e34a04c96ee21696058d1bbd3593d7d580947 Mon Sep 17 00:00:00 2001
+From: AndroidHQ254 <d.murimi14@gmail.com>
+Date: Tue, 31 Jan 2023 19:20:08 +0000
+Subject: [PATCH 1/2] revert aux
+
+---
+ core/java/android/hardware/Camera.java | 21 ++++++---------------
+ core/res/res/values/custom_config.xml  |  7 -------
+ core/res/res/values/custom_symbols.xml |  4 ----
+ 3 files changed, 6 insertions(+), 26 deletions(-)
+
+diff --git a/core/java/android/hardware/Camera.java b/core/java/android/hardware/Camera.java
+index 67acfd3a2c70..77369c02149f 100644
+--- a/core/java/android/hardware/Camera.java
++++ b/core/java/android/hardware/Camera.java
+@@ -31,7 +31,6 @@ import android.app.ActivityThread;
+ import android.app.AppOpsManager;
+ import android.compat.annotation.UnsupportedAppUsage;
+ import android.content.Context;
+-import android.content.res.Resources;
+ import android.graphics.ImageFormat;
+ import android.graphics.Point;
+ import android.graphics.Rect;
+@@ -291,20 +290,12 @@ public class Camera {
+          * if the package name does not falls in this bucket
+          */
+         String packageName = ActivityThread.currentOpPackageName();
+-        List<String> packageList = new ArrayList<>(Arrays.asList(
+-                SystemProperties.get("vendor.camera.aux.packagelist", ",").split(",")));
+-        List<String> packageExcludelist = new ArrayList<>(Arrays.asList(
+-                SystemProperties.get("vendor.camera.aux.packageexcludelist", ",").split(",")));
+-
+-        // Append packages from resources
+-        Resources res = ActivityThread.currentApplication().getResources();
+-        packageList.addAll(Arrays.asList(res.getStringArray(
+-                com.android.internal.R.array.config_cameraAuxPackageAllowList)));
+-        packageExcludelist.addAll(Arrays.asList(res.getStringArray(
+-                com.android.internal.R.array.config_cameraAuxPackageExcludeList)));
+-
+-        return (packageList.isEmpty() || packageList.contains(packageName)) &&
+-                !packageExcludelist.contains(packageName);
++        List<String> packageList = Arrays.asList(
++                SystemProperties.get("vendor.camera.aux.packagelist", packageName).split(","));
++        List<String> packageExcludelist = Arrays.asList(
++                SystemProperties.get("vendor.camera.aux.packageexcludelist", "").split(","));
++
++        return packageList.contains(packageName) && !packageExcludelist.contains(packageName);
+     }
+ 
+     /**
+diff --git a/core/res/res/values/custom_config.xml b/core/res/res/values/custom_config.xml
+index a7368046e5a3..3b7b1539c6c5 100644
+--- a/core/res/res/values/custom_config.xml
++++ b/core/res/res/values/custom_config.xml
+@@ -28,13 +28,6 @@
+     <!-- Is the battery LED intrusive? Used to decide if there should be a disable option -->
+     <bool name="config_intrusiveBatteryLed">@bool/config_intrusiveNotificationLed</bool>
+ 
+-    <!-- The list of package IDs that are allowed to use aux cameras.
+-         NOTE: If this list is empty then all apps will be able to use aux cameras. -->
+-    <string-array name="config_cameraAuxPackageAllowList" translatable="false" />
+-
+-    <!-- The list of package IDs that are not allowed to use aux cameras. -->
+-    <string-array name="config_cameraAuxPackageExcludeList" translatable="false" />
+-
+     <!-- Whether to cleanup fingerprints upon connection to the daemon and when user switches -->
+     <bool name="config_cleanupUnusedFingerprints">true</bool>
+ 
+diff --git a/core/res/res/values/custom_symbols.xml b/core/res/res/values/custom_symbols.xml
+index 261486e6796d..f196ef234871 100644
+--- a/core/res/res/values/custom_symbols.xml
++++ b/core/res/res/values/custom_symbols.xml
+@@ -22,10 +22,6 @@
+     <!-- Leds -->
+     <java-symbol type="bool" name="config_intrusiveBatteryLed" />
+ 
+-    <!-- Camera -->
+-    <java-symbol type="array" name="config_cameraAuxPackageAllowList" />
+-    <java-symbol type="array" name="config_cameraAuxPackageExcludeList" />
+-
+     <!-- Whether to cancel fingerprint operation if not idle -->
+     <java-symbol type="bool" name="config_fpCancelIfNotIdle" />
+ 
+-- 
+2.34.1
+
